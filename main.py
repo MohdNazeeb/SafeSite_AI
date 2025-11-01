@@ -28,6 +28,11 @@ app.add_middleware(
 
 app.include_router(auth_router)
 
+@app.get("/")
+async def root():
+    return {"message": "Welcome to SafeSite AI!"}
+
+
 @app.get("/protected")
 def protected_route(current_user = Depends(get_current_user)):
     return {"message": f"Hello, {current_user.username}. This is protected."}

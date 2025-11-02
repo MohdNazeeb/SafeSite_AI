@@ -44,7 +44,7 @@ def protected_route(current_user = Depends(get_current_user)):
 
 @app.post("/raw-videos")
 # , current_user = Depends(get_current_user)
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(file: UploadFile = File(...), current_user = Depends(get_current_user)):
     # Basic validation
     if file.content_type.split("/")[0] != "video":
         raise HTTPException(status_code=400, detail="Uploaded file must be a video")
@@ -53,7 +53,7 @@ async def upload_video(file: UploadFile = File(...)):
     from datetime import datetime
     filename = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
     # key = f"uploads/{current_user.username}/{filename}"
-    key=f"raw-videos/{filename}"
+    key=f"raw-videos/{current_user.username}/{filename}"
 
 
     # Try uploading to S3 (if configured)
@@ -69,29 +69,70 @@ async def upload_video(file: UploadFile = File(...)):
     return {"message": "Upload successful", "file_name": filename, "file_url": file_url}
 
 
-@app.get("/analytics")
+from fastapi import APIRouter, HTTPException
+import requests
+
+router = APIRouter()
+
+@router.get("/analytics")
 async def get_analytics():
     """
-    Mock analytics endpoint — returns real-time safety and detection stats.
-    Replace with actual model/processed data integration later.
+    Analytics endpoint — fetches processed safety data from AWS Lambda URL
+    and computes real-time detection insights.
     """
-    analytics_data = {
-        "detection_accuracy": 0.91,
-        "total_detections": 312,
-        "safety_alerts": 8,
-        "avg_confidence": 0.94,
-        "detections_by_category": [
-            {"name": "Worker", "count": 180},
-            {"name": "Hard Hat", "count": 150},
-            {"name": "Safety Vest", "count": 120},
-            {"name": "No Helmet", "count": 12},
-        ],
-        "accuracy_trend": [
-            {"time": "9AM", "acc": 0.86},
-            {"time": "10AM", "acc": 0.88},
-            {"time": "11AM", "acc": 0.91},
-            {"time": "12PM", "acc": 0.93},
-            {"time": "1PM", "acc": 0.94},
-        ],
-    }
-    return analytics_data
+    try:
+        # 1️⃣ Fetch processed data from your Lambda endpoint
+        response = requests.get("https://09vprol3o9.execute-api.ap-south-1.amazonaws.com/prod/outliers")
+        if response.status_code != 200:
+            raise HTTPException(status_code=502, detail="Failed to fetch processed data from AWS")
+
+        data = response.json()
+
+
+        detections = data.get("detections", [])
+
+        # 2️⃣ Compute analytics dynamically
+        total_detections = len(detections)
+        if total_detections == 0:
+            return {"message": "No detections available"}
+
+        # Accuracy & confidence metrics
+        avg_confidence = sum(d["confidence"] for d in detections) / total_detections
+        safety_alerts = sum(1 for d in detections if d.get("alert", False))
+
+        # Detection accuracy = 1 - (alerts / total)
+        detection_accuracy = round(1 - (safety_alerts / total_detections), 2)
+
+        # Count detections by label/category
+        category_counts = {}
+        for d in detections:
+            label = d["label"]
+            category_counts[label] = category_counts.get(label, 0) + 1
+
+        detections_by_category = [{"name": k, "count": v} for k, v in category_counts.items()]
+
+        # Simulated accuracy trend (optional)
+        accuracy_trend = [
+            {"time": "9AM", "acc": detection_accuracy - 0.03},
+            {"time": "10AM", "acc": detection_accuracy - 0.02},
+            {"time": "11AM", "acc": detection_accuracy - 0.01},
+            {"time": "12PM", "acc": detection_accuracy},
+        ]
+
+        # 3️⃣ Construct the final analytics payload
+        analytics_data = {
+            "detection_accuracy": detection_accuracy,
+            "total_detections": total_detections,
+            "safety_alerts": safety_alerts,
+            "avg_confidence": round(avg_confidence, 2),
+            "detections_by_category": detections_by_category,
+            "accuracy_trend": accuracy_trend,
+        }
+
+        return analytics_data
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching analytics: {str(e)}")
+
+
+app.include_router(router=router)

@@ -15,7 +15,7 @@ app = FastAPI(title="SafeSite AI Backend")
 from fastapi.middleware.cors import CORSMiddleware
 
 origins = [
-    "https://safesite-ai-neon.vercel.app",
+    # "https://safesite-ai-neon.vercel.app",
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:5173",
